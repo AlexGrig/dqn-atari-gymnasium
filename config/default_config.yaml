@@ -1,0 +1,28 @@
+randomness_params:
+    "seed": 43
+
+env_params: # these params are fed into make_env function
+    "env_id": "ALE/Pong-v5" #"PongNoFrameskip-v4"
+    
+agent_params: # these params are fed into `DQNAgent` and `ReplayBuffer` 
+    "lr": 0.0001
+    "batch_size": 32
+    "gamma": 0.99
+    "dqn_type": "nature" # neurips
+    "use_double_dqn": True  # use double deep Q-learning
+    "replay_buffer_size": 5000  # replay buffer size
+
+learning_params: # these params are fed into `learn` and `EpsilonScheduler`
+    "total_steps_num": 500000
+    "learning_starts": 10000  # number of steps before learning starts
+    "learning_freq": 1  # number of iterations between every optimization step
+    "target_update_freq": 1000  # number of iterations between every target network update
+    "epsilon_start": 1  # e-greedy start threshold
+    "epsilon_end": 0.01  # e-greedy end threshold
+    "epsilon_fraction": 0.1  # fraction of num-steps when epsilon decreases from `epsilon_start` to `epsilon_end`
+    
+log_params:
+    "log_dir": './run_log' # relative to run_train.py
+    "action_log_frequency": 100 # in steps
+    "fig_plot_freq": 400 # in steps
+    "print_freq": 10 # in episodes
