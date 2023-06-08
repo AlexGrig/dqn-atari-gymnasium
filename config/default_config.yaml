@@ -3,6 +3,7 @@ randomness_params:
 
 env_params: # these params are fed into make_env function
     "env_id": "ALE/Pong-v5" #"PongNoFrameskip-v4"
+    "remove_fire_action": True
     
 agent_params: # these params are fed into `DQNAgent` and `ReplayBuffer` 
     "lr": 0.0001

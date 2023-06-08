@@ -26,10 +26,10 @@ import argparse
 
 import config.config as config
 
-def make_env(env_id='PongNoFrameskip-v4'):
+def make_env(env_id='PongNoFrameskip-v4', remove_fire_action=False):
     #env_id = "PongNoFrameskip-v4"
     env = wrap.make_atari_env(env_id, frameskip=4, repeat_action_probability=0, max_episode_steps=None, 
-                   init_noop_max=30, episode_life=True, remove_fire_action=False, new_size=84, 
+                   init_noop_max=30, episode_life=True, remove_fire_action=remove_fire_action, new_size=84, 
                    make_greyscale=True, clip_rewards=True, num_frame_stack=4)
     env = wrap.WrapShapePyTorch(env, extra_batch_dim=False)
     print(env_id)
