@@ -78,7 +78,7 @@ def plot_episode_data(ax1, ax2, episode_log_file, total_steps_no):
     ax1.set_title('Episode Reward vs timestep')
     
     
-    ax1.set_ylabel('Length (steps)')
+    ax2.set_ylabel('Length (steps)')
     p2, = ax2.plot(xx, yy_eplen, label="Episode length")
     
     ax2.yaxis.label.set_color(p2.get_color())
