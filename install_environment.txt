@@ -5,10 +5,11 @@ conda install -c anaconda scipy
 conda install -c conda-forge matplotlib
 pip install -U scikit-learn
 conda install -c anaconda pandas
+conda install -c anaconda yaml pyyaml
 pip install opencv-python
 pip install "gymnasium[classic-control, atari, mujoco, accept-rom-license]"
 pip install "stable_baselines3[extra]>=2.0.0a9"
 conda install pytorch::pytorch torchvision torchaudio -c pytorch
 conda install -c anaconda pytest
-pip install wandb -U
+#pip install wandb U-
 
