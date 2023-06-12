@@ -39,7 +39,7 @@ class NestedDict(dict):
         
         func_args = inspect.getfullargspec(func).args
         func_default_vals = inspect.getfullargspec(func).defaults
-    
+        #import pdb; pdb.set_trace()
         func_default_args = func_args[-len(func_default_vals):]
     
         return self._get_elements(keys_filter_list=func_default_args)

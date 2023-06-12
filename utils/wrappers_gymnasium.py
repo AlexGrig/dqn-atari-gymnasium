@@ -6,7 +6,7 @@ from gymnasium.spaces.box import Box
 
 import os
 
-from gymnasium.wrappers import FrameStack, GrayScaleObservation, ResizeObservation
+from gymnasium.wrappers import FrameStack, GrayScaleObservation, ResizeObservation, RecordVideo
 #import gymnasium.ActionWrapper as ActionWrapper
 
 import stable_baselines3 as baselines

@@ -26,12 +26,34 @@ import argparse
 
 import config.config as config
 
-def make_env(env_id='PongNoFrameskip-v4', remove_fire_action=False):
+def make_env(env_id='PongNoFrameskip-v4', remove_fire_action=False, record_video=False, log_dir = None):
     #env_id = "PongNoFrameskip-v4"
     env = wrap.make_atari_env(env_id, frameskip=4, repeat_action_probability=0, max_episode_steps=None, 
                    init_noop_max=30, episode_life=True, remove_fire_action=remove_fire_action, new_size=84, 
                    make_greyscale=True, clip_rewards=True, num_frame_stack=4)
     env = wrap.WrapShapePyTorch(env, extra_batch_dim=False)
+    
+    if record_video:
+        env.metadata["render_fps"] = 10
+        env.metadata["fps"] = 10
+        env = wrap.RecordVideo(env, video_folder=log_dir, episode_trigger=lambda episode_no: True, 
+                   step_trigger = None, video_length = 0, name_prefix = 'test-video', disable_logger = False)
+        # Note! to be able to use video recorder like this I had to modify external code in two places:
+        # 1) File: python3.9/site-packages/moviepy/video/VideoClip.py
+        #    I commented one decorator of the method `write_videofile` because it could not get default 
+        #       and explicitely transferred fps param.:
+        #    @requires_duration
+        #    #@use_clip_fps_by_default
+        #    @convert_masks_to_RGB
+        #    def write_videofile(self, filename, fps=None, codec=None, ...
+        # 2) File site-packages/gymnasium/wrappers/monitoring/video_recorder.py  
+        #    In method `close` I changed the call to `write_videofile` function to be able to explicitely
+        #    transfer `fps` parameter.
+        #    # AlexGrig ->
+        #    # clip.write_videofile(self.path, logger=moviepy_logger
+        #    clip.write_videofile(self.path, fps=self.frames_per_sec, logger=moviepy_logger)
+        #    # AlexGrig <-
+        # Only after this manipulations vedeo recording started to work.     
     print(env_id)
     return env
 
@@ -98,7 +120,7 @@ def get_state(obs):
     #return torch.from_numpy(tt1)
     return tt0
 
-def train(env, agent, log_dir = './log', total_steps_num=10000, learning_starts=1000, learning_freq=1, 
+def train(env, agent, log_dir = './run_log', total_steps_num=10000, learning_starts=1000, learning_freq=1, 
           target_update_freq=100, epsilon_start=1, epsilon_end=0.01, epsilon_fraction=0.1, 
           action_log_frequency=None, print_freq=None, fig_plot_freq=None):    
     """
@@ -128,11 +150,11 @@ def train(env, agent, log_dir = './log', total_steps_num=10000, learning_starts=
     episode_rewards = [0.0]
     episode_lengths = [0.0]
     episode_no = 0
+    td_loss = None
     
     train_start_time = time.time()
     episode_start_time = train_start_time
     step_start_time = train_start_time
-    
     for step in range(1, total_steps_num+1):
         eplison_threshold = compute_epsilon(step, epsilon_fraction, total_steps_num, 
                                             epsilon_start, epsilon_end)
@@ -150,15 +172,26 @@ def train(env, agent, log_dir = './log', total_steps_num=10000, learning_starts=
         next_state = get_state(next_state)
         done = (terminated or truncated)
         
-        agent.memory.add(state, action, reward, next_state, float(done)) # later float(done) is used in loss computation.
+        agent.memory.add(state, action, reward, next_state, float(done)) 
+        # later float(done) is used in loss computation. (These records are avoided)
+        
         state = next_state
 
         episode_rewards[-1] += reward
         episode_lengths[-1] += 1
         
+        # Logging ->
+        # We want to log here terminal states as well.
+        step_logger.log({'step_no': step, 'td_loss': td_loss, 'reward': reward, 'action': action, 'done': done})
+        if (action_log_frequency is not None): # frequency is checked in the logger
+            action_logger.log_action(step, action)
+        # Logging <-
+        
         if done: # episode ends
             episode_no += 1
+            # Logging ->
             episode_logger.log({'episode_no': episode_no,'step_no': step, 'episode_reward': episode_rewards[-1], 'episode_length': int(episode_lengths[-1]), 'episode_time': (time.time() - episode_start_time),  'time_since_train_start_min': (time.time() - train_start_time)/60 })
+            # Logging <-
             state = get_state( env.reset() )
             
             episode_start_time = time.time()
@@ -176,10 +209,6 @@ def train(env, agent, log_dir = './log', total_steps_num=10000, learning_starts=
         
         
         # Logging ->
-        step_logger.log({'step_no': step, 'td_loss': td_loss, 'reward': reward, 'action': action})
-        if (action_log_frequency is not None): # frequency is checked in the logger
-            action_logger.log_action(step, action)
-            
         if (fig_plot_freq is not None) and (step % fig_plot_freq == 0):
             plotting.plot_all_data(step_logger.log_file, episode_logger.log_file, action_logger.log_file, 
                                    step, total_steps_num, ipynb = False, log_plot_file_name = 'log.jpg')
@@ -196,8 +225,48 @@ def train(env, agent, log_dir = './log', total_steps_num=10000, learning_starts=
             print("********************************************************")
             torch.save(agent.policy_network.state_dict(), Path(log_dir) / f'checkpoint.pth')
          # Logging <-  
-
         
+    # TODO: rename the checkpoint to include episode_num and step num.
+    # TODO: include interafce for both toolboxes gym and dymnasium e.g. in set_state function.
+
+def test(env, agent, log_dir):
+    
+    # define loggers:
+    step_log = (Path(log_dir) / 'test_step_log.csv').absolute()
+    step_logger = log.Logger(step_log, erase_existing=True)
+    
+    state = get_state( env.reset() )
+    
+    episode_reward = 0
+    episode_length = 0
+    
+    episode_start_time = time.time()
+    step = 0
+    done = False
+    while not done:
+        action = agent.act(state)
+        
+        next_state, reward, terminated, truncated, info = env.step(action)
+        next_state = get_state(next_state)
+        done = (terminated or truncated)
+        
+        state = next_state
+        
+        step += 1
+        episode_reward += reward
+        episode_length += 1
+        
+        # We want to log terniminal states as well.
+        step_logger.log({'step_no': step, 'reward': reward, 'action': action, 'done': done})
+    
+        if done: # episode ends
+            env.close()
+            print(f'Test episode finished.')
+            print(f'Episode reward: {episode_reward}')
+            print(f'Episode length: {episode_length}')
+            print(f'Episode time: {time.time() - episode_start_time}')
+            break
+            
 if __name__ == '__main__':
 
     # Process command line params:   
@@ -206,23 +275,32 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, default=None, help='Config file')
     parser.add_argument('--load-checkpoint-file', type=str, default=None, 
                         help='Where checkpoint file should be loaded from (usually results/checkpoint.pth)')
+    parser.add_argument('--test', action='count', default=0, 
+                        help='Whether test of 1 episode should be run. Assumes `--load-checkpoint-file` to be present.')
     parser.add_argument('--num-threads', type=int, default=None, 
-                        help='NUmber of threaeds fed into `torch.set_num_threads()` ')
+                        help='Number of threads fed into `torch.set_num_threads()` ')
     args = parser.parse_args()
     
     hyper_params = config.read_yaml(args.config)
     print(hyper_params)
     # Set num threads:
-    if args.num_threads is not None:
+    
+    test_mode=False
+    if args.test > 0:
+        test_mode = True
+        if not (args.load_checkpoint_file):
+            raise ValueError('You have requested testing but have not provided a checkpoint file.')
+        
+    if (not test_mode) and (args.num_threads is not None):
         print(f'num_threads: {args.num_threads}')
         torch.set_num_threads(args.num_threads)
-        
+    
     # If you have a checkpoint file, spend less time exploring:
-    if(args.load_checkpoint_file):
+    if (not test_mode) and (args.load_checkpoint_file):
         hyper_params['learning_params']['epsilon_start']= 0.01
     else:
         pass
-    
+    print(f"Start epsilon: { hyper_params['learning_params']['epsilon_start'] }")
     
     # Old code of gym PongNoFrameskip-v4" for info ->
     #hyper_params = {
@@ -256,13 +334,21 @@ if __name__ == '__main__':
     #env = WarpFrame(env)
     #env = PyTorchFrame(env)
     #env = ClipRewardEnv(env)
-    #env = FrameStack(env, 4)c
+    #env = FrameStack(env, 4)
     #env = gym.wrappers.Monitor(
     #    env, './video/', video_callable=lambda episode_id: episode_id % 50 == 0, force=True)
     # Old code of gym PongNoFrameskip-v4" for info <-
     
+    #make_env(env_id='PongNoFrameskip-v4', remove_fire_action=False, record_video=False, video_dir = None)
     set_seeds(**hyper_params["randomness_params"])
-    env = make_env(**hyper_params["env_params"])
+    if test_mode:
+        log_dir = Path(args.load_checkpoint_file).absolute().parent
+        env = make_env(**hyper_params["env_params"], record_video=True, log_dir=log_dir)
+        
+    else:
+        env = make_env(**hyper_params["env_params"])
+    
+    #import pdb; pdb.set_trace()
     
     params_for_replay_buffer = hyper_params["agent_params"].filter_elements_with_func_named_args(ReplayBuffer.__init__)
     replay_buffer = ReplayBuffer(**params_for_replay_buffer)
@@ -271,16 +357,16 @@ if __name__ == '__main__':
     agent = make_agent(
         env,
         replay_buffer,
-        checkpoint_file = args.load_checkpoint_file, 
+        checkpoint_file = Path(args.load_checkpoint_file).absolute(), 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         **params_for_dqn_agent)
     
-    
-    params_for_training = hyper_params["learning_params"].filter_elements_with_func_named_args(train) + hyper_params["log_params"]
-    
-    
-    train(env, agent, **params_for_training)
-    
+    if test_mode:
+        #params_for_testing = hyper_params["log_params"].filter_elements_with_func_named_args(test)
+        test(env, agent, log_dir=log_dir)
+    else:
+        params_for_training = hyper_params["learning_params"].filter_elements_with_func_named_args(train) + hyper_params["log_params"]
+        train(env, agent, **params_for_training)
 
 ## Running pdb postmortem:
     
