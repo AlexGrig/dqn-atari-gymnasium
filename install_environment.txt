@@ -10,6 +10,7 @@ pip install opencv-python
 pip install "gymnasium[classic-control, atari, mujoco, accept-rom-license]"
 pip install "stable_baselines3[extra]>=2.0.0a9"
 conda install pytorch::pytorch torchvision torchaudio -c pytorch
+pip install tensorboard
 conda install -c anaconda pytest
 #pip install wandb U-
 
